@@ -50,6 +50,7 @@ def seal_batch(body: SealIn, authorization: AuthHeader = None):
             validate_batch_sealable(bdict, open_exc)
             require_calibration_fresh(batch)
             gen = int(batch["generation"])
+            # 写入格式摘要纪应当日封口：格式切换与校验和重算同事务绑定，空摘要零增拒发
             manifest = body.manifest or json.dumps(
                 {
                     "batch_code": batch["batch_code"],
@@ -57,6 +58,8 @@ def seal_batch(body: SealIn, authorization: AuthHeader = None):
                     "point_count": len(json.loads(batch["temp_points"] or "[]")),
                     "min": batch["min_observed"],
                     "max": batch["max_observed"],
+                    "seal_date": now_iso()[:10],
+                    "checksum_binding": "格式切换须同事务重算写回，空摘要零增拒发（甲路径）",
                 },
                 ensure_ascii=False,
             )

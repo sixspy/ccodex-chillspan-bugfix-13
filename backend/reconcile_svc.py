@@ -4,7 +4,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
-from db import connect
+from db import FORMAL_EXPORT_PREDICATE, connect
+from spectrum_svc import formal_exports_of_batch
 
 router = APIRouter(tags=["reconcile"])
 
@@ -85,13 +86,15 @@ def batch_proof(batch_code: str, authorization: AuthHeader = None):
                WHERE batch_id=? AND status='开放'""",
             (batch["id"],),
         ).fetchone()["c"]
+        # 同源口径：空摘要/待重算遗痕不计入正式温谱导出
         exports = conn.execute(
-            """SELECT COUNT(*) c FROM spectrum_exports
-               WHERE batch_id=? AND status='已导出'""",
+            f"""SELECT COUNT(*) c FROM spectrum_exports
+                WHERE batch_id=? AND {FORMAL_EXPORT_PREDICATE}""",
             (batch["id"],),
         ).fetchone()["c"]
+        formal_list = formal_exports_of_batch(conn, batch["id"])
         sealed = batch["status"] == "已封批"
-        spectrum_ok = (exports >= 1) if sealed else True
+        spectrum_ok = (exports >= 1) if sealed else False
         return {
             "batch_code": batch_code,
             "status": batch["status"],
@@ -101,8 +104,18 @@ def batch_proof(batch_code: str, authorization: AuthHeader = None):
             "sealed": sealed,
             "excursion_closed": open_exc == 0,
             "spectrum_matches_seal": spectrum_ok,
+            "formal_exports": [
+                {
+                    "export_ref": x["export_ref"],
+                    "checksum": x["checksum"],
+                    "export_format": x["export_format"],
+                    "checksum_state": x["checksum_state"],
+                    "point_count": x["point_count"],
+                }
+                for x in formal_list
+            ],
             "proof": {
-                "formula": "sealed => spectrum>=1 and open_excursions==0",
+                "formula": "sealed => formal_export>=1 and open_excursions==0",
                 "sealed": sealed,
                 "open_excursions": open_exc,
                 "exports": exports,

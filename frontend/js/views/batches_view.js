@@ -35,6 +35,20 @@ export const batchesViewTemplate = `
   <div v-if="batchDetail" class="detail-box">
     <h3>{{ batchDetail.batch.batch_code }} · {{ batchDetail.batch.cargo_ref }}</h3>
     <p>点数 {{ batchDetail.batch.temp_points.length }} · 游标 {{ batchDetail.excursions.length }} 条</p>
+    <p class="hint">正式温谱摘要（与封批/血缘/互证同源，空摘要遗痕不计入）：</p>
+    <table v-if="batchDetail.formal_exports && batchDetail.formal_exports.length" class="data-table">
+      <thead><tr><th>导出号</th><th>格式</th><th>点数</th><th>校验和</th><th>校验态</th></tr></thead>
+      <tbody>
+        <tr v-for="x in batchDetail.formal_exports" :key="x.export_ref">
+          <td>{{ x.export_ref }}</td>
+          <td>{{ x.export_format }}</td>
+          <td>{{ x.point_count }}</td>
+          <td class="mono">{{ x.checksum }}</td>
+          <td><span class="badge pass">{{ x.checksum_state }}</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p v-else class="hint">尚无正式温谱导出（待重算遗痕不对外）。</p>
   </div>
 </section>
 `;

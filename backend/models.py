@@ -44,8 +44,18 @@ class SealIn(BaseModel):
     manifest: str = ""
 
 
+ALLOWED_EXPORT_FORMATS = ("json", "csv")
+
+
 class SpectrumIn(BaseModel):
     batch_id: int
+    export_format: str = "json"
+
+    def normalized_format(self) -> str:
+        fmt = (self.export_format or "json").strip().lower()
+        if fmt not in ALLOWED_EXPORT_FORMATS:
+            raise ValueError(fmt)
+        return fmt
 
 
 class LineageIn(BaseModel):

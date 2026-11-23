@@ -9,7 +9,8 @@ from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
 from locks import release, require_lock
 from models import BatchIn
-from validators import summarize_points, validate_probe_online, validate_temp_point
+from spectrum_svc import formal_exports_of_batch
+from validators import require_calibration_fresh, summarize_points, validate_probe_online, validate_temp_point
 
 router = APIRouter(tags=["batches"])
 
@@ -76,10 +77,21 @@ def get_batch(batch_id: int, authorization: AuthHeader = None):
             "SELECT * FROM seal_snapshots WHERE batch_id=? ORDER BY id DESC",
             (batch_id,),
         ).fetchall()
+        formal_exports = formal_exports_of_batch(conn, batch_id)
         return {
             "batch": data,
             "excursions": [dict(e) for e in exc],
             "seals": [dict(s) for s in seals],
+            "formal_exports": [
+                {
+                    "export_ref": x["export_ref"],
+                    "checksum": x["checksum"],
+                    "export_format": x["export_format"],
+                    "checksum_state": x["checksum_state"],
+                    "point_count": x["point_count"],
+                }
+                for x in formal_exports
+            ],
         }
 
 

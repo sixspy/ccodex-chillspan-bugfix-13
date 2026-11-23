@@ -1,0 +1,12 @@
+[
+  {
+    "batch_code": "TB-CK-HD-01-002",
+    "export_ref": "SP-TB-CK-HD-01-002-G2",
+    "export_format": "csv",
+    "point_count": 2,
+    "checksum": "",
+    "status": "已导出",
+    "note": "BUGFIX-13 复现夹具：格式已由 JSON 切换为 CSV，格式改写口清空摘要后未重算，空校验和仍下发",
+    "created_at": "2026-11-10T10:05:00"
+  }
+]

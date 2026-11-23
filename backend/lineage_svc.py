@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from auth import AuthHeader, require_user, require_writer
 from db import connect, now_iso, write_audit
 from models import LineageIn
+from spectrum_svc import formal_exports_of_batch
 
 router = APIRouter(tags=["lineage"])
 
@@ -71,7 +72,18 @@ def batch_lineage(batch_id: int, authorization: AuthHeader = None):
         in_edges = conn.execute(
             "SELECT * FROM lineage_edges WHERE to_batch_id=?", (batch_id,)
         ).fetchall()
+        formal_exports = formal_exports_of_batch(conn, batch_id)
         return {
             "outbound": [dict(e) for e in out_edges],
             "inbound": [dict(e) for e in in_edges],
+            "formal_exports": [
+                {
+                    "export_ref": x["export_ref"],
+                    "checksum": x["checksum"],
+                    "export_format": x["export_format"],
+                    "checksum_state": x["checksum_state"],
+                    "point_count": x["point_count"],
+                }
+                for x in formal_exports
+            ],
         }

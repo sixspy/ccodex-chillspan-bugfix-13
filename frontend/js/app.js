@@ -83,13 +83,15 @@ createApp({
     });
     const excOpenForm = ref({ batch_id: 0, threshold: null, note: "" });
     const sealForm = ref({ batch_id: 0, manifest: "" });
-    const spectrumForm = ref({ batch_id: 0 });
+    const spectrumForm = ref({ batch_id: 0, export_format: "json" });
     const lineageForm = ref({
       from_batch_id: 1,
       to_batch_id: 2,
       edge_type: "分装衍生",
       detail: "冷库内分装",
     });
+    const lineageSummaryBatchId = ref(1);
+    const lineageSummary = ref(null);
     const calForm = ref({
       probe_id: 1,
       offset_c: 0.1,
@@ -151,6 +153,21 @@ createApp({
     function shortText(t) {
       if (!t) return "";
       return String(t).slice(0, 48) + (String(t).length > 48 ? "…" : "");
+    }
+    function sealManifestNote(manifest) {
+      try {
+        const m = JSON.parse(manifest || "{}");
+        return m.checksum_binding || shortText(manifest);
+      } catch {
+        return shortText(manifest);
+      }
+    }
+    function formalSpectrumNote(batchId) {
+      const rows = spectrumExports.value.filter(
+        (x) => x.batch_id === batchId && x.formally_issued && x.checksum
+      );
+      if (!rows.length) return "无正式导出（待重算遗痕不计）";
+      return rows.map((x) => `${x.export_ref}:${x.checksum}`).join(" / ");
     }
 
     async function login() {
@@ -353,8 +370,11 @@ createApp({
     async function doSpectrum() {
       clearFlash();
       try {
-        const row = await api.spectrumExport({ batch_id: spectrumForm.value.batch_id });
-        flashOk(`温谱 ${row.export_ref}`);
+        const row = await api.spectrumExport({
+          batch_id: spectrumForm.value.batch_id,
+          export_format: spectrumForm.value.export_format,
+        });
+        flashOk(`温谱 ${row.export_ref} 校验和 ${row.checksum}`);
         await refresh();
       } catch (e) {
         flashErr(e);
@@ -367,6 +387,15 @@ createApp({
         await api.addLineage(lineageForm.value);
         flashOk("血缘边已登记");
         await refresh();
+      } catch (e) {
+        flashErr(e);
+      }
+    }
+
+    async function loadLineageSummary() {
+      clearFlash();
+      try {
+        lineageSummary.value = await api.lineageBatch(lineageSummaryBatchId.value);
       } catch (e) {
         flashErr(e);
       }
@@ -486,6 +515,8 @@ createApp({
       sealForm,
       spectrumForm,
       lineageForm,
+      lineageSummaryBatchId,
+      lineageSummary,
       calForm,
       routeForm,
       carrierForm,
@@ -503,6 +534,8 @@ createApp({
       probeOnlineClass,
       excursionClass,
       shortText,
+      sealManifestNote,
+      formalSpectrumNote,
       createChamber,
       loadChamberDetail,
       registerProbe,
@@ -516,6 +549,7 @@ createApp({
       doSeal,
       doSpectrum,
       addLineageEdge,
+      loadLineageSummary,
       loadRecon,
       loadProof,
       loadReconAll,

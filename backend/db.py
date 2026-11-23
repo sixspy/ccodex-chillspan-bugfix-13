@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS spectrum_exports(
   export_ref TEXT NOT NULL,
   point_count INTEGER NOT NULL,
   checksum TEXT NOT NULL,
+  export_format TEXT NOT NULL DEFAULT 'json',
+  checksum_state TEXT NOT NULL DEFAULT '已重算',
+  formally_issued INTEGER NOT NULL DEFAULT 1,
   status TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY(batch_id) REFERENCES temp_batches(id)
@@ -201,6 +204,32 @@ def write_audit(conn: sqlite3.Connection, actor: str, action: str, target: str, 
         """INSERT INTO audit_trail(actor,action,target,payload,created_at)
            VALUES (?,?,?,?,?)""",
         (actor, action, target, json.dumps(payload, ensure_ascii=False), now_iso()),
+    )
+
+
+# 甲路径：正式对外导出必须校验和非空且已重算；空摘要遗痕一律不得对外下发
+FORMAL_EXPORT_PREDICATE = "status='已导出' AND formally_issued=1 AND checksum_state='已重算' AND checksum!=''"
+
+
+def _migrate_spectrum_columns(conn: sqlite3.Connection) -> None:
+    """旧库补列；空摘要遗痕降级为“待重算/未正式下发”，不得对外。"""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(spectrum_exports)")}
+    if "export_format" not in cols:
+        conn.execute(
+            "ALTER TABLE spectrum_exports ADD COLUMN export_format TEXT NOT NULL DEFAULT 'json'"
+        )
+    if "checksum_state" not in cols:
+        conn.execute(
+            "ALTER TABLE spectrum_exports ADD COLUMN checksum_state TEXT NOT NULL DEFAULT '已重算'"
+        )
+    if "formally_issued" not in cols:
+        conn.execute(
+            "ALTER TABLE spectrum_exports ADD COLUMN formally_issued INTEGER NOT NULL DEFAULT 1"
+        )
+    conn.execute(
+        """UPDATE spectrum_exports
+           SET checksum_state='待重算', formally_issued=0
+           WHERE checksum IS NULL OR checksum=''"""
     )
 
 
@@ -355,6 +384,37 @@ def seed_calibrations(conn: sqlite3.Connection) -> None:
         )
 
 
+def seed_spectrum_exports(conn: sqlite3.Connection) -> None:
+    """装载 BUGFIX-13 复现夹具：格式已换、校验和仍空的导出遗痕。"""
+    for row in _load_json("spectrum_exports.json"):
+        if conn.execute(
+            "SELECT id FROM spectrum_exports WHERE export_ref=?",
+            (row["export_ref"],),
+        ).fetchone():
+            continue
+        batch = conn.execute(
+            "SELECT id FROM temp_batches WHERE batch_code=?", (row["batch_code"],)
+        ).fetchone()
+        if not batch:
+            continue
+        conn.execute(
+            """INSERT INTO spectrum_exports(batch_id,export_ref,point_count,checksum,
+               export_format,checksum_state,formally_issued,status,created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                batch["id"],
+                row["export_ref"],
+                int(row.get("point_count", 0)),
+                row.get("checksum", ""),
+                row.get("export_format", "json"),
+                "待重算" if not row.get("checksum") else "已重算",
+                0 if not row.get("checksum") else 1,
+                row.get("status", "已导出"),
+                row.get("created_at", now_iso()),
+            ),
+        )
+
+
 def seed_routes(conn: sqlite3.Connection) -> None:
     for row in _load_json("routes.json"):
         if conn.execute(
@@ -401,6 +461,7 @@ def seed_lineage_samples(conn: sqlite3.Connection) -> None:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrate_spectrum_columns(conn)
         seed_users(conn)
         seed_chambers(conn)
         seed_probes(conn)
@@ -408,6 +469,7 @@ def init_db() -> None:
         seed_excursions(conn)
         seed_calibrations(conn)
         seed_routes(conn)
+        seed_spectrum_exports(conn)
         seed_lineage_samples(conn)
         conn.commit()
 
@@ -423,7 +485,7 @@ def dashboard_stats(conn: sqlite3.Connection) -> dict:
         "SELECT COUNT(*) c FROM temp_batches WHERE status='已封批'"
     ).fetchone()["c"]
     exports = conn.execute(
-        "SELECT COUNT(*) c FROM spectrum_exports WHERE status='已导出'"
+        f"SELECT COUNT(*) c FROM spectrum_exports WHERE {FORMAL_EXPORT_PREDICATE}"
     ).fetchone()["c"]
     stubs = {
         "carrier_ingest_jobs": conn.execute(
